@@ -1,5 +1,6 @@
 import typing
 from logging import getLogger
+from types import NoneType
 
 from app.store.vk_api.dataclasses import Message, Update
 
@@ -14,6 +15,8 @@ class BotManager:
         self.logger = getLogger("handler")
 
     async def handle_updates(self, updates: list[Update]):
+        if isinstance(updates, NoneType):
+            return
         for update in updates:
             await self.app.store.vk_api.send_message(
                 Message(
