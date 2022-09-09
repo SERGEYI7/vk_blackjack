@@ -102,6 +102,17 @@ class VkApiAccessor(BaseAccessor):
 
     async def send_message(self, message: Message) -> None:
         async with self.session.get(
+            self._build_query(
+                API_PATH,
+                "messages.getConversations",
+                params={"group_id": 205115018,
+                        "access_token": self.app.config.bot.token}
+            )
+        ) as resp:
+            response = await resp.json()
+            print(response.get("response").get("items")[0].get("conversation"))
+            "'conversation': {'peer': {'id': 188961688, 'type': 'user', 'local_id': 188961688}"
+        async with self.session.get(
                 self._build_query(
                     API_PATH,
                     "messages.send",
@@ -109,6 +120,7 @@ class VkApiAccessor(BaseAccessor):
                         "user_id": message.user_id,
                         "random_id": random.randint(1, 2 ** 32),
                         "peer_id": "-" + str(self.app.config.bot.group_id),
+                        "chat_id": 188961688,
                         "message": message.text,
                         "access_token": self.app.config.bot.token,
                     },
