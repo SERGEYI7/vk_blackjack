@@ -71,7 +71,6 @@ class BotManager:
             )
 
 
-
     def generate_card_deck(self) -> dict:
         cards = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 'Валет', 'Дама', 'Король', 'Туз']
         types_cards = ['Бубны', 'Черви', 'Пики', 'Крести']
