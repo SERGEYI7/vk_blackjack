@@ -1,3 +1,4 @@
+import json
 import random
 import typing
 from types import NoneType, coroutine
@@ -101,30 +102,47 @@ class VkApiAccessor(BaseAccessor):
             await self.app.store.bots_manager.handle_updates(updates)
 
     async def send_message(self, message: Message) -> None:
-        async with self.session.get(
-            self._build_query(
-                API_PATH,
-                "messages.getConversations",
-                params={"group_id": 205115018,
-                        "access_token": self.app.config.bot.token}
-            )
-        ) as resp:
-            response = await resp.json()
-            print(response.get("response").get("items")[0].get("conversation"))
-            "'conversation': {'peer': {'id': 188961688, 'type': 'user', 'local_id': 188961688}"
+        button = json.dumps({"buttons": [[{"action": {"type": "callback", "payload": "{\"skldjhfsdkfhg\": \"ыыыыы\"}", "label": "Touch Me..."}}]]})
         async with self.session.get(
                 self._build_query(
                     API_PATH,
                     "messages.send",
                     params={
-                        "user_id": message.user_id,
+                        # "user_id": message.user_id,
                         "random_id": random.randint(1, 2 ** 32),
-                        "peer_id": "-" + str(self.app.config.bot.group_id),
-                        "chat_id": 188961688,
+                        "peer_id": message.peer_id,#"-" + str(self.app.config.bot.group_id),
+                        "chat_id": message.chat_id,
                         "message": message.text,
+                        "keyboard": button,
                         "access_token": self.app.config.bot.token,
                     },
                 )
         ) as resp:
             data = await resp.json()
             self.logger.info(data)
+        if self.app.store.bots_manager.type == "message_event":
+            print("Вошёл в message event")
+            async with self.session.get(
+                self._build_query(API_PATH,
+                                  "messages.sendMessageEventAnswer",
+                                  params={"user_id": self.app.store.bots_manager.user_id,
+                                          "peer_id": self.app.store.bots_manager.peer_id,
+                                          "event_id": self.app.store.bots_manager.event_id,
+                                          "event_data": "new_message"
+                                          },
+                                  )
+            ) as response_event_answer:
+                print(await response_event_answer.json())
+
+    async def user(self, user_id):
+        async with self.session.get(
+            self._build_query(
+                API_PATH,
+                "users.get",
+                params={"user_ids": user_id,
+                        "fields": "domain",
+                        "access_token": self.app.config.bot.token}
+            )
+        ) as resp:
+            response = await resp.json()
+            return response
