@@ -2,9 +2,13 @@ import typing
 
 from sqlalchemy import select
 from json import loads
+from sqlalchemy.exc import IntegrityError
 
 from app.admin.models import Admin, AdminModel
 from app.base.base_accessor import BaseAccessor
+
+if typing.TYPE_CHECKING:
+    from app.web.app import Application
 
 
 class AdminAccessor(BaseAccessor):
@@ -25,5 +29,4 @@ class AdminAccessor(BaseAccessor):
         )
 
         async with self.app.database.session.begin() as session:
-            session.add(new_admin)
-        return new_admin
+            add_admin = session.add(new_admin)

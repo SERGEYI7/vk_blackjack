@@ -15,13 +15,12 @@ from app.quiz.models import (
 class QuizAccessor(BaseAccessor):
     async def create_theme(self, title: str) -> Theme:
         try:
-            theme_model = ThemeModel(title=title)
             async with self.app.database.session.begin() as session:
-                session.add(theme_model)
+                result = session.add(ThemeModel(title=title))
         except IntegrityError as e:
             raise IntegrityError(statement=e.statement, orig=e.orig, params=e.params, )
         theme = await self.get_theme_by_title(title)
-        # theme = Theme(id=theme_model.id, title=theme_model.title)
+
         return theme
 
     async def get_theme_by_title(self, title: str) -> Theme | None:
