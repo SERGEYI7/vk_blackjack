@@ -99,10 +99,20 @@ class VkApiAccessor(BaseAccessor):
                             ),
                         )
                     )
+                elif type == "message_event":
+                    updates.append(
+                        Update(
+                            type=type,
+                            object=UpdateObject(
+                                id=None,
+                                user_id=update["object"]["user_id"],
+                                body=update["object"],
+                            ),
+                        )
+                    )
             await self.app.store.bots_manager.handle_updates(updates)
 
     async def send_message(self, message: Message) -> None:
-        button = json.dumps({"buttons": [[{"action": {"type": "callback", "payload": "{\"skldjhfsdkfhg\": \"ыыыыы\"}", "label": "Touch Me..."}}]]})
         async with self.session.get(
                 self._build_query(
                     API_PATH,
@@ -113,26 +123,32 @@ class VkApiAccessor(BaseAccessor):
                         "peer_id": message.peer_id,#"-" + str(self.app.config.bot.group_id),
                         "chat_id": message.chat_id,
                         "message": message.text,
-                        "keyboard": button,
+                        "keyboard": message.kwargs["buttons"],
                         "access_token": self.app.config.bot.token,
                     },
                 )
         ) as resp:
             data = await resp.json()
             self.logger.info(data)
-        if self.app.store.bots_manager.type == "message_event":
-            print("Вошёл в message event")
-            async with self.session.get(
-                self._build_query(API_PATH,
-                                  "messages.sendMessageEventAnswer",
-                                  params={"user_id": self.app.store.bots_manager.user_id,
-                                          "peer_id": self.app.store.bots_manager.peer_id,
-                                          "event_id": self.app.store.bots_manager.event_id,
-                                          "event_data": "new_message"
-                                          },
-                                  )
-            ) as response_event_answer:
-                print(await response_event_answer.json())
+
+    async def send_message_event_answer(self, message):
+        async with self.session.get(
+            self._build_query(
+                API_PATH,
+                "messages.sendMessageEventAnswer",
+                params={
+                    "event_id": message.kwargs["event_id"],
+                    "user_id": message.user_id,
+                    "peer_id": message.peer_id,
+                    "event_data": json.dumps({
+                        "type": "show_snackbar",
+                        "text": message.text
+                        }),
+                    "access_token": self.app.config.bot.token
+                },
+            )
+        ) as event_answer:
+            print(await event_answer.json())
 
     async def user(self, user_id):
         async with self.session.get(
