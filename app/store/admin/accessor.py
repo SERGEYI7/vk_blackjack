@@ -6,7 +6,6 @@ from json import loads
 from app.admin.models import Admin, AdminModel
 from app.base.base_accessor import BaseAccessor
 
-
 class AdminAccessor(BaseAccessor):
     async def get_by_email(self, email: str) -> Admin | None:
         async with self.app.database.session.begin() as session:

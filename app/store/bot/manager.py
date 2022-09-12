@@ -80,8 +80,6 @@ class BotManager:
             # TODO начинаешь играть
             pass
 
-    async def passs(self):
-        pass
 
     async def handle_updates(self, updates: list[Update]):
         if isinstance(updates, NoneType) or not updates:
