@@ -14,6 +14,7 @@ class BotManager:
         self.app = app
         self.bot = None
         self.logger = getLogger("handler")
+        self.table = {}
         self.updates = list[Update]
         self.user_id = int()
         self.peer_id = int()
@@ -27,23 +28,25 @@ class BotManager:
         self.last_name = str()
         self.send_answer_message = str()
         self.message_to_send = str()
-        self.members ={}
+        self.members = {}
+        self.host = str()
         self.buttons = None
         self.state = 0
         self.generate_card_deck()
 
     async def state_machine(self):
         if self.state == 0:
-            if self.received_message == "\\играть":
-                #TODO Запомнить кто хост (кто набрал \играть)
+            if self.received_message == "\\start":
                 # self.send_message = f"{self.card_deck}"
+                # TODO вызов набора игроков
+                self.host = self.domain
                 self.buttons = json.dumps({"buttons": [[{"action": {"type": "text",
-                                                                    "payload": json.dumps({"key": "Я участвую"}),
-                                                                    "label": "Я участвую"}}],
+                                                                    "payload": json.dumps({"key": "I play"}),
+                                                                    "label": "I play"}}],
                                                        [{"action": {"type": "text",
                                                                     "payload": json.dumps(
-                                                                        {"key": "Закончить набор игроков"}),
-                                                                    "label": "Закончить набор игроков"
+                                                                        {"key": "Finish recruiting players"}),
+                                                                    "label": "Finish recruiting players"
                                                                     }
                                                          }]]
 
@@ -52,20 +55,20 @@ class BotManager:
                 self.message_to_send = f"{self.first_name} {self.last_name} начал набор игроков!!!"
                 await self.send_message()
                 self.state = 1
-            # TODO вызов набора игроков
         elif self.state == 1:
             payload = self.updates[0].object.body.get("message").get("payload")
+            print(payload)
             if not payload:
                 return
             payload_key = json.loads(payload)["key"]
-            if payload_key == "Я участвую":
+            if payload_key == "I play":
                 if self.domain in self.members:
                     self.message_to_send = "Этот игрок уже участвует"
                 else:
                     self.members[self.domain] = f"{self.last_name} {self.first_name}"
                     self.message_to_send = str(self.members)
                 await self.send_message()
-            elif payload_key == "Закончить набор игроков":
+            elif payload_key == "Finish recruiting players" and self.domain == self.host:
                 # TODO Это условие выполнится только если команду "Закончить набор игроков" вызовет хост
                 print("Закончить набор игроков")
                 self.message_to_send = f"Набор игроков окончен%0AУчастники: {self.members}"
@@ -74,12 +77,13 @@ class BotManager:
             # TODO Тут идёт набор игкроков
         elif self.state == 2:
             # TODO Раскладываешь карты
+            self.table["Diller"] = {"cards": [], "sum_cards": []}
+            for member_k, member_v in self.members.items():
+                self.table[member_k] = {"full_name": member_v, "cards": [], "sum": []}
             print("State 2")
-            pass
         elif self.state == 3:
             # TODO начинаешь играть
             pass
-
 
     async def handle_updates(self, updates: list[Update]):
         if isinstance(updates, NoneType) or not updates:

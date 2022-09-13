@@ -63,6 +63,9 @@ class VkApiAccessor(BaseAccessor):
         ) as resp:
             data = (await resp.json())["response"]
             self.logger.info(data)
+            if data.get("failed") == 2:
+                print("")
+                await self._get_long_poll_service()
             self.key = data["key"]
             self.server = data["server"]
             self.ts = data["ts"]
