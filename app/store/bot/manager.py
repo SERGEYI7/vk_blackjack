@@ -59,7 +59,6 @@ class BotManager:
                 self.state = 1
         elif self.state == 1:
             payload = self.updates[0].object.body.get("message").get("payload")
-            print(payload)
             if not payload:
                 return
             payload_key = json.loads(payload)["key"]
@@ -89,11 +88,11 @@ class BotManager:
             self.give_cards()
             self.buttons = json.dumps({"buttons": [
                 [{"action": {"type": "text",
-                             "payload": json.dumps({"key": "I play"}),
+                             "payload": json.dumps({"key": "Another card"}),
                              "label": "Ещё карту"}}],
                 [{"action": {"type": "text",
                              "payload": json.dumps(
-                                 {"key": "Finish recruiting players"}),
+                                 {"key": "Pass"}),
                              "label": "Пас"}}]]})
             for member_k, member_v in self.table.items():
                 name = f"[{member_k}|{member_v.get('full_name')}]"
@@ -107,20 +106,45 @@ class BotManager:
             # TODO начинаешь играть
             list_members = list(self.members.items())
             num_members = len(list_members)
-            if self.queue > num_members:
+            if self.queue >= num_members:
                 self.queue = 0
             domain_queue = list_members[self.queue][0]
             full_name_queue = list_members[self.queue][1]
-            self.message_to_send = f"[{domain_queue}|{full_name_queue}] делает ход"
             if domain_queue != self.domain:
                 return
-            self.give_cadr_member(domain_queue)
-            if self.table[domain_queue]["sum_cards"] > 24:
-                self.message_to_send = f"Игрок [{domain_queue}|{full_name_queue}] проиграл"
-                for i in range(2):
-                    self.give_cadr_member(domain_queue)
+            # self.give_cadr_member(domain_queue)
+            payload = self.updates[0].object.body.get("message").get("payload")
+            payload = json.loads(payload)["key"]
+            if payload == "Another card":
+                self.give_cadr_member(domain_queue)
+                self.message_to_send = f"Карты игрока [{domain_queue}|{full_name_queue}]: " \
+                                       f"%0A{'%0A'.join(self.table[domain_queue]['cards'])}"
+                await self.send_message()
+                self.message_to_send = f"[{domain_queue}|{full_name_queue}] делает ход"
+                await self.send_message()
+            elif payload == "Pass":
                 self.queue += 1
-            await self.send_message()
+                self.message_to_send = f"Карты диллера: %0A{'%0A'.join(self.table['Diller']['cards'])}"
+                await self.send_message()
+                self.message_to_send = f"Карты игрока [{domain_queue}|{full_name_queue}]: " \
+                                       f"%0A{'%0A'.join(self.table[domain_queue]['cards'])}"
+                await self.send_message()
+                # self.autopsy_result()
+
+            if self.table[domain_queue]["sum_cards"] > 21:
+                self.message_to_send = f"Игрок [{domain_queue}|{full_name_queue}] проиграл"
+
+                self.clear_hand_member(domain_queue)
+                self.give_cards()
+
+                self.message_to_send = f"Новые Карты диллера: %0A{'%0A'.join(self.table['Diller']['cards'])}"
+                await self.send_message()
+                self.message_to_send = f"Карты игрока [{domain_queue}|{full_name_queue}]: " \
+                                       f"%0A{'%0A'.join(self.table[domain_queue]['cards'])}"
+                await self.send_message()
+
+                self.queue += 1
+                await self.send_message()
 
     async def handle_updates(self, updates: list[Update]):
         if isinstance(updates, NoneType) or not updates:
@@ -169,39 +193,49 @@ class BotManager:
             )
 
     def generate_table(self):
-        self.table["Diller"] = {"cards": [], "sum_cards": []}
+        self.table["Diller"] = {"cards": [], "sum_cards": 0}
         for member_k, member_v in self.members.items():
-            self.table[member_k] = {"full_name": member_v, "cards": [], "sum_cards": []}
+            self.table[member_k] = {"full_name": member_v, "cards": [], "sum_cards": 0}
 
-    def give_cards(self, limit=None):
-        print(self.card_deck)
-
+    def give_cards(self):
         for member_k, member_v in self.table.items():
             if member_k == "Diller":
-                self.give_cadr_member(member_k, member_v, 17)
+                self.give_cadr_member(member_k, 2, 17)
             else:
-                self.give_cadr_member(member_k, member_v, 24)
-            print(self.table)
+                self.give_cadr_member(member_k, 2, 21)
 
-    def give_cadr_member(self, name, hand=None, limit=None):
+    def clear_hand_member(self, member):
+        self.table[member]["cards"] = []
+        self.table[member]["sum_cards"] = 0
+
+    def give_cadr_member(self, name, count_cards=1, limit=None):
+        if len(self.card_deck) <= 2:
+            self.generate_card_deck()
         mixed_deck = list(self.card_deck)
-        ready = False
         limit = 100 if limit is None else limit
-        while not ready:
-            number_first_card = random.randint(0, len(self.card_deck)) - 1
-            number_second_card = random.randint(0, len(self.card_deck)) - 1
-            print(mixed_deck[number_first_card])
-            print(mixed_deck[number_second_card])
-            first_card = self.card_deck[mixed_deck[number_first_card]]
-            second_card = self.card_deck[mixed_deck[number_second_card]]
-            cards = [first_card, second_card]
-            if 3 <= sum(cards) <= limit:
-                self.table[name]["cards"] = [mixed_deck[number_first_card], mixed_deck[number_second_card]]
-                print(first_card, second_card)
-                self.table[name]["sum_cards"] = first_card + second_card
-                self.card_deck.pop(mixed_deck[number_first_card])
-                self.card_deck.pop(mixed_deck[number_second_card])
-                ready = True
+        hand = self.table[name]
+        price_cards_in_hand = hand["sum_cards"]
+        cards_in_hand = hand["cards"]
+        for _ in range(count_cards):
+            ready = False
+            while not ready:
+                number_first_card = random.randint(0, len(self.card_deck)) - 1
+                # number_second_card = random.randint(0, len(self.card_deck)) - 1
+                # print(mixed_deck[number_first_card])
+                # print(mixed_deck[number_second_card])
+                random_card = mixed_deck[number_first_card]
+                random_card_price = self.card_deck[random_card]
+                # second_card = self.card_deck[mixed_deck[number_second_card]]
+                # cards.append(first_card)
+                # sum_cards.append(self.card_deck["first_card"])
+                # cards = [i for i in sum_cards_in_hand]
+                # cards.append(random_card_price)
+                if 3 <= (price_cards_in_hand + int(random_card_price)) <= limit:
+                    cards_in_hand.append(random_card)
+                    # price_cards_in_hand += random_card_price
+                    hand["sum_cards"] += random_card_price
+                    self.card_deck.pop(random_card)
+                    ready = True
 
     def generate_card_deck(self) -> dict:
         cards = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 'Валет', 'Дама', 'Король', 'Туз']
