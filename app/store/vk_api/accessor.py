@@ -62,10 +62,11 @@ class VkApiAccessor(BaseAccessor):
                 )
         ) as resp:
             data = (await resp.json())["response"]
-            self.logger.info(data)
             if data.get("failed") == 2:
-                print("")
-                await self._get_long_poll_service()
+                print("Сработала ошибка в ацессоре в _get_long_poll_service")
+                # await self._get_long_poll_service()
+                # await self.poll()
+            self.logger.info(data)
             self.key = data["key"]
             self.server = data["server"]
             self.ts = data["ts"]
@@ -80,39 +81,30 @@ class VkApiAccessor(BaseAccessor):
                         "act": "a_check",
                         "key": self.key,
                         "ts": self.ts,
-                        "wait": 30,
+                        "wait": 1, #30
                     },
                 )
         ) as resp:
             data = await resp.json()
+            if data.get("failed") == 2:
+                print("Сработала ошибка в ацессоре в полл")
+                await self._get_long_poll_service()
+                await self.poll()
             self.logger.info(data)
             self.ts = data["ts"]
             raw_updates = data.get("updates", [])
             updates = []
             for update in raw_updates:
-                type = update["type"]
-                if type == "message_new":
-                    updates.append(
-                        Update(
-                            type=type,
-                            object=UpdateObject(
-                                id=update["object"]["message"]["id"],
-                                user_id=update["object"]["message"]["from_id"],
-                                body=update["object"],
-                            ),
-                        )
+                updates.append(
+                    Update(
+                        type=update["type"],
+                        object=UpdateObject(
+                            id=update["object"]["message"]["id"],
+                            user_id=update["object"]["message"]["from_id"],
+                            body=update["object"],
+                        ),
                     )
-                elif type == "message_event":
-                    updates.append(
-                        Update(
-                            type=type,
-                            object=UpdateObject(
-                                id=None,
-                                user_id=update["object"]["user_id"],
-                                body=update["object"],
-                            ),
-                        )
-                    )
+                )
             await self.app.store.bots_manager.handle_updates(updates)
 
     async def send_message(self, message: Message) -> None:

@@ -1,5 +1,6 @@
 import json
 import typing
+from enum import Enum
 from logging import getLogger
 from types import NoneType
 import random
@@ -10,143 +11,160 @@ if typing.TYPE_CHECKING:
     from app.web.app import Application
 
 
+class MessageToSend(Enum):
+    start_additions_member = "{first_name} {last_name} начал набор игроков!!!"
+    cards_member = "{name}, карты: {cards}"
+    member_makes_move ="[{domain_queue}|{full_name_queue}] делает ход"
+
+    cards_player = "Карты игрока [{domain_queue}|{full_name_queue}]: " \
+                                       "%0A{cards}"
+    cards_diller = "Карты диллера: %0A{cards}"
+
+    member_loss = "Игрок [{domain_queue}|{full_name_queue}] проиграл"
+
+    new_cards_diller = "Новые карты диллера: %0A{cards}"
+    new_cards_member = "Новые карты игрока [{domain_queue}|{full_name_queue}]: " \
+                        "%0A{cards}"
+    member_already_exists = "Этот игрок уже участвует"
+    new_member = "[{domain}|{last_name} {first_name}] участвует"
+    list_members = "Набор игроков окончен%0AУчастники: %0A{members}"
+    end_game = "Конец игры"
+
+class Buttons(Enum):
+    player_add_buttons = json.dumps({"buttons": [[{"action": {"type": "text",
+                                                              "payload": json.dumps({"key": "I play"}),
+                                                              "label": "I play"}}],
+                                                 [{"action": {"type": "text",
+                                                              "payload":
+                                                                  json.dumps({"key": "Finish recruiting players"}),
+                                                              "label": "Finish recruiting players"
+                                                              }
+                                                   }]]})
+    game_process_buttons = json.dumps({"buttons": [[{"action": {"type": "text",
+                                                                "payload": json.dumps({"key": "Another card"}),
+                                                                "label": "Ещё карту"}}],
+                                                   [{"action": {"type": "text",
+                                                                "payload": json.dumps(
+                                                                    {"key": "Pass"}),
+                                                                "label": "Пас"}}]]})
+
+
+class State(Enum):
+    GAME_OFF = 0
+    PLAYER_ADD = 1
+    CARD_DISTRIBUTION = 2
+    START_GAME = 3
+
+
 class BotManager:
     def __init__(self, app: "Application"):
         self.app = app
         self.bot = None
         self.logger = getLogger("handler")
-        self.table = {}
-        self.updates = list[Update]
-        self.user_id = int()
-        self.peer_id = int()
-        self.chat_id = int()
-        self.event_id = str()
-        self.type = str()
-        self.card_deck = dict()
-        self.received_message = str()
-        self.domain = str()
-        self.first_name = str()
-        self.last_name = str()
-        self.send_answer_message = str()
-        self.message_to_send = str()
-        self.members = dict()
-        self.queue = 0
-        self.host = str()
-        self.player_add_buttons = json.dumps({"buttons": [[{"action": {"type": "text",
-                                                                       "payload": json.dumps({"key": "I play"}),
-                                                                       "label": "I play"}}],
-                                                          [{"action": {"type": "text",
-                                                                       "payload":
-                                                                           json.dumps({"key": "Finish recruiting players"}),
-                                                                       "label": "Finish recruiting players"
-                                                                       }
-                                                            }]]
-
-                                              }
-        )
-        self.game_process_buttons = json.dumps({"buttons": [
-            [{"action": {"type": "text",
-                         "payload": json.dumps({"key": "Another card"}),
-                         "label": "Ещё карту"}}],
-            [{"action": {"type": "text",
-                         "payload": json.dumps(
-                             {"key": "Pass"}),
-                         "label": "Пас"}}]]})
-        self.state = 0
+        self.table: dict | None = {}
+        self.updates: list[Update] | None = list[Update]()
+        self.user_id: int | None = int()
+        self.peer_id: int | None = int()
+        self.chat_id: int | None = int()
+        self.event_id: str | None = str()
+        self.type: str | None = str()
+        self.card_deck: dict | None = dict()
+        self.received_message: str | None = str()
+        self.domain: str | None = str()
+        self.first_name: str | None = str()
+        self.last_name: str | None = str()
+        self.send_answer_message: str | None = str()
+        self.message_to_send: str | None = str()
+        self.members: dict | None = dict()
+        self.queue: int | None = 0
+        self.host: str | None = str()
+        self.state: int | None = 0
         self.generate_card_deck()
 
     async def state_machine(self):
-        if self.state == 0:
+        if self.state == State.GAME_OFF.value:
             if self.received_message == "/start":
-                # self.send_message = f"{self.card_deck}"
-                # TODO вызов набора игроков
                 self.host = self.domain
-                self.message_to_send = f"{self.first_name} {self.last_name} начал набор игроков!!!"
-                await self.send_message(self.player_add_buttons)
+                # self.message_to_send = f"{self.first_name} {self.last_name} начал набор игроков!!!"
+                message_to_send = MessageToSend.start_additions_member.value.format(first_name=self.first_name,
+                                                                                    last_name=self.last_name)
+                await self.send_message(message_text=message_to_send,
+                                        buttons=Buttons.player_add_buttons.value)
                 self.state = 1
-        elif self.state == 1:
-            payload = self.updates[0].object.body.get("message").get("payload")
-            if not payload:
-                return
-            payload_key = json.loads(payload)["key"]
-            if payload_key == "I play":
-                if self.domain in self.members:
-                    self.message_to_send = "Этот игрок уже участвует"
-                else:
-                    self.members[self.domain] = f"{self.last_name} {self.first_name}"
-                    self.message_to_send = f"[{self.domain}|{self.last_name} {self.first_name}] участвует"  # str(self.members)
-                await self.send_message()
-            elif payload_key == "Finish recruiting players" and self.domain == self.host:
-                # TODO Это условие выполнится только если команду "Закончить набор игроков" вызовет хост
-                # TODO Тут идёт набор игкроков
-                print("Закончить набор игроков")
-                string_members = ""
-                for member_k, member_v in self.members.items():
-                    string_members += f"[{member_k}|{member_v}]%0A"
-                self.message_to_send = f"Набор игроков окончен%0AУчастники: %0A{string_members}"
-                await self.send_message()
-                self.state = 2
-
-                await self.state_machine()
-        elif self.state == 2:
-            print("State 2")
-            # TODO Раскладываешь карты игрокам
+        elif self.state == State.PLAYER_ADD.value:
+            await self._additions_member()
+        elif self.state == State.CARD_DISTRIBUTION.value:
             self.generate_table()
             self.give_cards()
             for member_k, member_v in self.table.items():
                 name = f"[{member_k}|{member_v.get('full_name')}]"
                 if member_k == "Diller":
                     name = member_k
-                self.message_to_send = f"{name}, карты: {', '.join(member_v['cards'])}"
-                await self.send_message(self.game_process_buttons)
+                # self.message_to_send = f"{name}, карты: {', '.join(member_v['cards'])}"
+                message_to_send = MessageToSend.cards_member.value.format(name=name,
+                                                                          cards=', '.join(member_v['cards']))
+                await self.send_message(message_text=message_to_send,
+                                        buttons=Buttons.game_process_buttons.value)
             self.state = 3
             await self.state_machine()
-        elif self.state == 3:
+
+        elif self.state == State.START_GAME.value:
             # TODO начинаешь играть
             list_members = list(self.members.items())
             num_members = len(list_members)
             if self.queue >= num_members:
                 self.queue = 0
             domain_queue = list_members[self.queue][0]
-            full_name_queue = list_members[self.queue][1]
+            while self.table[domain_queue] != "in game":
+
             if domain_queue != self.domain:
                 return
+            full_name_queue = list_members[self.queue][1]
             # self.give_cadr_member(domain_queue)
             payload = self.updates[0].object.body.get("message").get("payload")
-            payload = json.loads(payload)["key"]
+            if payload is None:
+                return
+            payload = json.loads(payload).get("key")
+            # TODO Декомпозировать в функцию _start_game() (Придумай другое имя)
             if payload == "Another card":
                 self.give_cadr_member(domain_queue)
-                self.message_to_send = f"Карты игрока [{domain_queue}|{full_name_queue}]: " \
-                                       f"%0A{'%0A'.join(self.table[domain_queue]['cards'])}"
-                await self.send_message()
+                message_to_send = MessageToSend.cards_player.value.format(domain_queue=domain_queue,
+                                                                          full_name_queue=full_name_queue,
+                                                                          cards='%0A'.join(self.table[domain_queue]['cards']))
+                await self.send_message(message_text=message_to_send)
                 self.message_to_send = f"[{domain_queue}|{full_name_queue}] делает ход"
-                await self.send_message()
-                self.queue += 1
+                message_to_send = MessageToSend.member_makes_move.value.format(domain_queue=domain_queue,
+                                                                               full_name_queue=full_name_queue)
+                await self.send_message(message_text=message_to_send)
             elif payload == "Pass":
+                # TODO После пасса нужно чистить руку игрока который сделал пасс
+                #  или чистить все руки включая диллера если все сделали пасс
                 self.table[domain_queue]["status"] = "pass"
-                self.queue += 1
-                self.message_to_send = f"Карты диллера: %0A{'%0A'.join(self.table['Diller']['cards'])}"
-                await self.send_message()
-                self.message_to_send = f"Карты игрока [{domain_queue}|{full_name_queue}]: " \
-                                       f"%0A{'%0A'.join(self.table[domain_queue]['cards'])}"
-                await self.send_message()
-                # await self.autopsy_result()
 
+                message_to_send = MessageToSend.cards_diller.value.format(cards='%0A'.join(self.table["Diller"]['cards']))
+                await self.send_message(message_text=message_to_send)
+                message_to_send = MessageToSend.cards_player.value.format(domain_queue=domain_queue,
+                                                                          full_name_queue=full_name_queue,
+                                                                          cards='%0A'.join(self.table[domain_queue]['cards']))
+                await self.send_message(message_text=message_to_send)
+                # await self.autopsy_result()
+            self.queue += 1
+            # TODO Декомпозировать в функцию autopsy_result()
             if self.table[domain_queue]["sum_cards"] > 21:
                 self.table[domain_queue]["status"] = "lost"
-                self.message_to_send = f"Игрок [{domain_queue}|{full_name_queue}] проиграл"
-
+                message_to_send = MessageToSend.member_loss.value.format(domain_queue=domain_queue,
+                                                                         full_name_queue=full_name_queue)
+                await self.send_message(message_text=message_to_send)
                 self.clear_hand_member(domain_queue)
                 if "in game" not in self.members.keys():
                     self.clear_all_hands()
                 self.give_cards()
-                await self.send_message()
-
-                self.message_to_send = f"Новые карты диллера: %0A{'%0A'.join(self.table['Diller']['cards'])}"
-                await self.send_message()
-                self.message_to_send = f"Новые карты игрока [{domain_queue}|{full_name_queue}]: " \
-                                       f"%0A{'%0A'.join(self.table[domain_queue]['cards'])}"
-                await self.send_message()
+                message_to_send = MessageToSend.new_cards_diller.value.format(cards='%0A'.join(self.table['Diller']['cards']))
+                await self.send_message(message_text=message_to_send)
+                message_to_send = MessageToSend.new_cards_member.value.format(domain_queue=domain_queue,
+                                                                              full_name_queue=full_name_queue,
+                                                                              cards='%0A'.join(self.table[domain_queue]['cards']))
+                await self.send_message(message_text=message_to_send)
 
                 self.queue += 1
 
@@ -185,34 +203,57 @@ class BotManager:
             self.event_id = message_body.get("event_id")
         if self.host == self.domain and self.received_message == "/end":
             await self.close_game()
-            self.message_to_send = f"Конец игры"
-            await self.send_message(self.game_process_buttons)
+            message_to_send = MessageToSend.end_game.value
+            await self.send_message(message_text=message_to_send,
+                                    buttons=Buttons.game_process_buttons.value)
+            return
         self.type = updates[0].type
         self.user_id = updates[0].object.user_id
         self.chat_id = self.peer_id - 2000000000
         await self.state_machine()
 
-    async def send_message(self, buttons="{}"):
+    async def send_message(self, message_text, buttons="{}"):
         for update in self.updates:
             await self.app.store.vk_api.send_message(
                 Message(
                     user_id=update.object.user_id,
-                    text=self.message_to_send,  # f"[{domain}|{first_name} {last_name}], Какая прикольная штука))",
+                    text=message_text,
                     peer_id=self.peer_id,
                     chat_id=self.peer_id - 2000000000,
                     kwargs={"buttons": buttons}
                 )
             )
 
+    async def _additions_member(self):
+        payload = self.updates[0].object.body.get("message").get("payload")
+        if not payload:
+            return
+        payload_key = json.loads(payload)["key"]
+        if payload_key == "I play":
+            if self.domain in self.members:
+                message_to_send = MessageToSend.member_already_exists.value
+            else:
+                self.members[self.domain] = f"{self.last_name} {self.first_name}"
+                self.message_to_send = f"[{self.domain}|{self.last_name} {self.first_name}] участвует"
+                message_to_send = MessageToSend.new_member.value.format(domain=self.domain,
+                                                                        last_name=self.last_name,
+                                                                        first_name=self.first_name)
+            await self.send_message(message_text=message_to_send)
+        elif payload_key == "Finish recruiting players" and self.domain == self.host:
+            string_members = ""
+            for member_k, member_v in self.members.items():
+                string_members += f"[{member_k}|{member_v}]%0A"
+            # self.message_to_send = f"Набор игроков окончен%0AУчастники: %0A{string_members}"
+            message_to_send = MessageToSend.list_members.value.format(members=string_members)
+            await self.send_message(message_text=message_to_send)
+            self.state = 2
+            await self.state_machine()
+
     async def close_game(self):
         self.state = 0
         self.members = dict()
         self.host = str()
         self.card_deck = dict()
-
-    def clear_all_hands(self):
-        self.generate_table()
-
 
     async def send_answer(self):
         for update in self.updates:
@@ -234,16 +275,19 @@ class BotManager:
         for member_k, member_v in self.members.items():
             self.table[member_k] = {"full_name": member_v, "cards": [], "sum_cards": 0, "status": "in game"}
 
+    def clear_all_hands(self):
+        self.generate_table()
+
+    def clear_hand_member(self, member):
+        self.table[member]["cards"] = []
+        self.table[member]["sum_cards"] = 0
+
     def give_cards(self):
         for member_k, member_v in self.table.items():
             if member_k == "Diller":
                 self.give_cadr_member(member_k, 2, 17)
             else:
                 self.give_cadr_member(member_k, 2, 21)
-
-    def clear_hand_member(self, member):
-        self.table[member]["cards"] = []
-        self.table[member]["sum_cards"] = 0
 
     def give_cadr_member(self, name, count_cards=1, limit=None):
         if len(self.card_deck) <= 2:
@@ -257,19 +301,19 @@ class BotManager:
             ready = False
             while not ready:
                 number_first_card = random.randint(0, len(self.card_deck)) - 1
-                # number_second_card = random.randint(0, len(self.card_deck)) - 1
-                # print(mixed_deck[number_first_card])
-                # print(mixed_deck[number_second_card])
                 random_card = mixed_deck[number_first_card]
+                # TODO Здесь иногда срабатывает ошибка, типа:
+                #  File "D:\py_projects\vk_blackjack\vk_blackjack\app\store\bot\manager.py", line 295, in give_cards
+                #     self.give_cadr_member(member_k, 2, 21)
+                #   File "D:\py_projects\vk_blackjack\vk_blackjack\app\store\bot\manager.py", line 310, in give_cadr_member
+                #     random_card_price = self.card_deck[random_card]
+                #  KeyError: '9 Черви'
+                #  Исправь
+                if not self.card_deck.get(random_card):
+                    print("")
                 random_card_price = self.card_deck[random_card]
-                # second_card = self.card_deck[mixed_deck[number_second_card]]
-                # cards.append(first_card)
-                # sum_cards.append(self.card_deck["first_card"])
-                # cards = [i for i in sum_cards_in_hand]
-                # cards.append(random_card_price)
                 if 3 <= (price_cards_in_hand + int(random_card_price)) <= limit:
                     cards_in_hand.append(random_card)
-                    # price_cards_in_hand += random_card_price
                     hand["sum_cards"] += random_card_price
                     self.card_deck.pop(random_card)
                     ready = True
