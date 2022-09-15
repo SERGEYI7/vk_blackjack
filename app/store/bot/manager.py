@@ -29,33 +29,40 @@ class BotManager:
         self.last_name = str()
         self.send_answer_message = str()
         self.message_to_send = str()
-        self.members = {}
+        self.members = dict()
         self.queue = 0
         self.host = str()
-        self.buttons = None
+        self.player_add_buttons = json.dumps({"buttons": [[{"action": {"type": "text",
+                                                                       "payload": json.dumps({"key": "I play"}),
+                                                                       "label": "I play"}}],
+                                                          [{"action": {"type": "text",
+                                                                       "payload":
+                                                                           json.dumps({"key": "Finish recruiting players"}),
+                                                                       "label": "Finish recruiting players"
+                                                                       }
+                                                            }]]
+
+                                              }
+        )
+        self.game_process_buttons = json.dumps({"buttons": [
+            [{"action": {"type": "text",
+                         "payload": json.dumps({"key": "Another card"}),
+                         "label": "Ещё карту"}}],
+            [{"action": {"type": "text",
+                         "payload": json.dumps(
+                             {"key": "Pass"}),
+                         "label": "Пас"}}]]})
         self.state = 0
         self.generate_card_deck()
 
     async def state_machine(self):
         if self.state == 0:
-            if self.received_message == "\\start":
+            if self.received_message == "/start":
                 # self.send_message = f"{self.card_deck}"
                 # TODO вызов набора игроков
                 self.host = self.domain
-                self.buttons = json.dumps({"buttons": [[{"action": {"type": "text",
-                                                                    "payload": json.dumps({"key": "I play"}),
-                                                                    "label": "I play"}}],
-                                                       [{"action": {"type": "text",
-                                                                    "payload": json.dumps(
-                                                                        {"key": "Finish recruiting players"}),
-                                                                    "label": "Finish recruiting players"
-                                                                    }
-                                                         }]]
-
-                                           }
-                                          )
                 self.message_to_send = f"{self.first_name} {self.last_name} начал набор игроков!!!"
-                await self.send_message()
+                await self.send_message(self.player_add_buttons)
                 self.state = 1
         elif self.state == 1:
             payload = self.updates[0].object.body.get("message").get("payload")
@@ -86,20 +93,12 @@ class BotManager:
             # TODO Раскладываешь карты игрокам
             self.generate_table()
             self.give_cards()
-            self.buttons = json.dumps({"buttons": [
-                [{"action": {"type": "text",
-                             "payload": json.dumps({"key": "Another card"}),
-                             "label": "Ещё карту"}}],
-                [{"action": {"type": "text",
-                             "payload": json.dumps(
-                                 {"key": "Pass"}),
-                             "label": "Пас"}}]]})
             for member_k, member_v in self.table.items():
                 name = f"[{member_k}|{member_v.get('full_name')}]"
                 if member_k == "Diller":
                     name = member_k
                 self.message_to_send = f"{name}, карты: {', '.join(member_v['cards'])}"
-                await self.send_message()
+                await self.send_message(self.game_process_buttons)
             self.state = 3
             await self.state_machine()
         elif self.state == 3:
@@ -122,29 +121,53 @@ class BotManager:
                 await self.send_message()
                 self.message_to_send = f"[{domain_queue}|{full_name_queue}] делает ход"
                 await self.send_message()
+                self.queue += 1
             elif payload == "Pass":
+                self.table[domain_queue]["status"] = "pass"
                 self.queue += 1
                 self.message_to_send = f"Карты диллера: %0A{'%0A'.join(self.table['Diller']['cards'])}"
                 await self.send_message()
                 self.message_to_send = f"Карты игрока [{domain_queue}|{full_name_queue}]: " \
                                        f"%0A{'%0A'.join(self.table[domain_queue]['cards'])}"
                 await self.send_message()
-                # self.autopsy_result()
+                # await self.autopsy_result()
 
             if self.table[domain_queue]["sum_cards"] > 21:
+                self.table[domain_queue]["status"] = "lost"
                 self.message_to_send = f"Игрок [{domain_queue}|{full_name_queue}] проиграл"
 
                 self.clear_hand_member(domain_queue)
+                if "in game" not in self.members.keys():
+                    self.clear_all_hands()
                 self.give_cards()
-
-                self.message_to_send = f"Новые Карты диллера: %0A{'%0A'.join(self.table['Diller']['cards'])}"
                 await self.send_message()
-                self.message_to_send = f"Карты игрока [{domain_queue}|{full_name_queue}]: " \
+
+                self.message_to_send = f"Новые карты диллера: %0A{'%0A'.join(self.table['Diller']['cards'])}"
+                await self.send_message()
+                self.message_to_send = f"Новые карты игрока [{domain_queue}|{full_name_queue}]: " \
                                        f"%0A{'%0A'.join(self.table[domain_queue]['cards'])}"
                 await self.send_message()
 
                 self.queue += 1
-                await self.send_message()
+
+    async def autopsy_result(self, domain_queue, full_name_queue):
+        if self.table[domain_queue]["sum_cards"] > 21:
+            self.table[domain_queue]["status"] = "lost"
+            self.message_to_send = f"Игрок [{domain_queue}|{full_name_queue}] проиграл"
+
+            self.clear_hand_member(domain_queue)
+            if "in game" not in self.members.keys():
+                self.clear_all_hands()
+            self.give_cards()
+            await self.send_message()
+
+            self.message_to_send = f"Новые карты диллера: %0A{'%0A'.join(self.table['Diller']['cards'])}"
+            await self.send_message()
+            self.message_to_send = f"Новые карты игрока [{domain_queue}|{full_name_queue}]: " \
+                                   f"%0A{'%0A'.join(self.table[domain_queue]['cards'])}"
+            await self.send_message()
+
+            self.queue += 1
 
     async def handle_updates(self, updates: list[Update]):
         if isinstance(updates, NoneType) or not updates:
@@ -160,12 +183,16 @@ class BotManager:
             self.received_message = message_body.get("text")
             self.peer_id = message_body.get("peer_id")
             self.event_id = message_body.get("event_id")
+        if self.host == self.domain and self.received_message == "/end":
+            await self.close_game()
+            self.message_to_send = f"Конец игры"
+            await self.send_message(self.game_process_buttons)
         self.type = updates[0].type
         self.user_id = updates[0].object.user_id
         self.chat_id = self.peer_id - 2000000000
         await self.state_machine()
 
-    async def send_message(self):
+    async def send_message(self, buttons="{}"):
         for update in self.updates:
             await self.app.store.vk_api.send_message(
                 Message(
@@ -173,9 +200,19 @@ class BotManager:
                     text=self.message_to_send,  # f"[{domain}|{first_name} {last_name}], Какая прикольная штука))",
                     peer_id=self.peer_id,
                     chat_id=self.peer_id - 2000000000,
-                    kwargs={"buttons": self.buttons}
+                    kwargs={"buttons": buttons}
                 )
             )
+
+    async def close_game(self):
+        self.state = 0
+        self.members = dict()
+        self.host = str()
+        self.card_deck = dict()
+
+    def clear_all_hands(self):
+        self.generate_table()
+
 
     async def send_answer(self):
         for update in self.updates:
@@ -195,7 +232,7 @@ class BotManager:
     def generate_table(self):
         self.table["Diller"] = {"cards": [], "sum_cards": 0}
         for member_k, member_v in self.members.items():
-            self.table[member_k] = {"full_name": member_v, "cards": [], "sum_cards": 0}
+            self.table[member_k] = {"full_name": member_v, "cards": [], "sum_cards": 0, "status": "in game"}
 
     def give_cards(self):
         for member_k, member_v in self.table.items():
