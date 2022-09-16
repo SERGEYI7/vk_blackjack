@@ -16,6 +16,7 @@ class MessageToSend(Enum):
     cards_member = "{name}, карты: {cards}"
     member_makes_move ="[{domain_queue}|{full_name_queue}] делает ход"
 
+    player_pass = "Игрок [{domain_queue}|{full_name_queue}] пассанул"
     cards_player = "Карты игрока [{domain_queue}|{full_name_queue}]: " \
                                        "%0A{cards}"
     cards_diller = "Карты диллера: %0A{cards}"
@@ -29,6 +30,9 @@ class MessageToSend(Enum):
     new_member = "[{domain}|{last_name} {first_name}] участвует"
     list_members = "Набор игроков окончен%0AУчастники: %0A{members}"
     end_game = "Конец игры"
+    win = "Вы выйграли"
+    tie = "Ничья"
+    loss = "Вы проиграли"
 
 class Buttons(Enum):
     player_add_buttons = json.dumps({"buttons": [[{"action": {"type": "text",
@@ -79,6 +83,7 @@ class BotManager:
         self.queue: int | None = 0
         self.host: str | None = str()
         self.state: int | None = 0
+        self.number_members_in_game: int | None = 0
         self.generate_card_deck()
 
     async def state_machine(self):
@@ -89,88 +94,7 @@ class BotManager:
         elif self.state == State.CARD_DISTRIBUTION.value:
             await self._start_distribution_card()
         elif self.state == State.START_GAME.value:
-            await self.start_game()
-            # TODO начинаешь играть
-            list_members = list(self.members.items())
-            num_members = len(list_members)
-
-            if self.queue >= num_members:
-                self.queue = 0
-
-            current_domain = list_members[self.queue][0]
-
-            # TODO До условий не должно быть действий
-            # list_status_members = list(map(lambda x: x.get("status"), self.table.values()))
-            # if "in game" not in list_status_members:
-            #     print("Вызов конца игры!!!")
-
-            # TODO Меняется очередь если у текущего пользователя status не равен "in game"
-            # while self.table[current_domain]["status"] != "in game":
-            #     print(self.table.values())
-            #     self.queue += 1
-
-            if current_domain != self.domain:
-                return
-
-            full_name_queue = list_members[self.queue][1]
-            # self.give_cadr_member(domain_queue)
-            payload = self.updates[0].object.body.get("message").get("payload")
-            if payload is None:
-                return
-            payload = json.loads(payload).get("key")
-
-            # TODO Декомпозировать в функцию _start_game() (Придумай другое имя)
-            if payload == "Another card":
-                self.give_cadr_member(current_domain)
-                message_to_send = MessageToSend.cards_player.value.format(domain_queue=current_domain,
-                                                                          full_name_queue=full_name_queue,
-                                                                          cards='%0A'.join(self.table[current_domain]['cards']))
-                await self.send_message(message_text=message_to_send)
-            elif payload == "Pass":
-                # TODO После пасса нужно чистить руку игрока который сделал пасс
-                #  или чистить все руки включая диллера если все сделали пасс
-                self.table[current_domain]["status"] = "pass"
-
-                list_status_members = list(map(lambda x: x.get("status"), self.table.values()))
-                message_to_send = MessageToSend.cards_diller.value.format(
-                                    cards='%0A'.join(self.table["Diller"]['cards']))
-                if "in game" not in list_status_members:
-                    # TODO Вызов логики пасс у всех!!!
-                    await self.send_message(message_to_send)
-                    list_pass_members = list(map(lambda x: x.get("status") == "pass", self.table.values()))
-                    # for i in self.table:
-                    #     print(i-)
-
-                else:
-                    message_to_send = MessageToSend.cards_player.value.format(domain_queue=current_domain,
-                                                                              full_name_queue=full_name_queue,
-                                                                              cards='%0A'.join(self.table[current_domain]['cards']))
-                    await self.send_message(message_text=message_to_send)
-                    # await self.autopsy_result()
-            # if
-            self.queue += 1
-            # TODO Декомпозировать в функцию autopsy_result()
-            if self.table[current_domain]["sum_cards"] > 21:
-                self.table[current_domain]["status"] = "lost"
-                message_to_send = MessageToSend.member_loss.value.format(domain_queue=current_domain,
-                                                                         full_name_queue=full_name_queue)
-                await self.send_message(message_text=message_to_send)
-                self.clear_hand_member(current_domain)
-                if "in game" not in self.members.keys():
-                    self.clear_all_hands()
-                self.give_cards()
-                message_to_send = MessageToSend.new_cards_diller.value.format(cards='%0A'.join(self.table['Diller']['cards']))
-                await self.send_message(message_text=message_to_send)
-                message_to_send = MessageToSend.new_cards_member.value.format(domain_queue=current_domain,
-                                                                              full_name_queue=full_name_queue,
-                                                                              cards='%0A'.join(self.table[current_domain]['cards']))
-                await self.send_message(message_text=message_to_send)
-
-                self.queue += 1
-
-            message_to_send = MessageToSend.member_makes_move.value.format(domain_queue=current_domain,
-                                                                           full_name_queue=full_name_queue)
-            await self.send_message(message_text=message_to_send)
+            await self._start_game()
 
     async def _start_additions_member(self):
         if self.received_message == "/start":
@@ -181,7 +105,32 @@ class BotManager:
                                     buttons=Buttons.player_add_buttons.value)
             self.state = 1
 
-    async def start_distribution_card(self):
+    async def _additions_member(self):
+        payload = self.updates[0].object.body.get("message").get("payload")
+        if not payload:
+            return
+        payload_key = json.loads(payload)["key"]
+        if payload_key == "I play":
+            if self.domain in self.members:
+                message_to_send = MessageToSend.member_already_exists.value
+            else:
+                self.members[self.domain] = {"full_name": f"{self.last_name} {self.first_name}", "status": "in_game"}
+                self.message_to_send = f"[{self.domain}|{self.last_name} {self.first_name}] участвует"
+                message_to_send = MessageToSend.new_member.value.format(domain=self.domain,
+                                                                        last_name=self.last_name,
+                                                                        first_name=self.first_name)
+            await self.send_message(message_text=message_to_send)
+        elif payload_key == "Finish recruiting players" and self.domain == self.host:
+            string_members = ""
+            for member_k, member_v in self.members.items():
+                string_members += f"[{member_k}|{member_v['full_name']}]%0A"
+            # self.message_to_send = f"Набор игроков окончен%0AУчастники: %0A{string_members}"
+            message_to_send = MessageToSend.list_members.value.format(members=string_members)
+            await self.send_message(message_text=message_to_send)
+            self.state = 2
+            await self.state_machine()
+
+    async def _start_distribution_card(self):
         self.generate_table()
         self.give_cards()
         for member_k, member_v in self.table.items():
@@ -195,24 +144,147 @@ class BotManager:
         self.state = 3
         await self.state_machine()
 
-    async def autopsy_result(self, domain_queue, full_name_queue):
-        if self.table[domain_queue]["sum_cards"] > 21:
-            self.table[domain_queue]["status"] = "lost"
-            self.message_to_send = f"Игрок [{domain_queue}|{full_name_queue}] проиграл"
+    async def _start_game(self):
+        # TODO начинаешь играть
+        # TODO нужно собирать список именно тех кто в игре {"status": "in_game"}
+        for i in self.members.items():
+            print(i[1])
+        # print(self.members.items()[1][""])
+        list_members_in_game = list(filter(lambda v: v[1]["status"]=="in_game", self.members.items()))
+        # list_member = list(map(lambda x: x[0], list_members_in_game))
+        self.number_members_in_game = len(list_members_in_game)
 
-            self.clear_hand_member(domain_queue)
-            if "in game" not in self.members.keys():
-                self.clear_all_hands()
+        current_domain = list_members_in_game[self.queue][0]
+
+        # TODO До условий не должно быть действий
+        # list_status_members = list(map(lambda x: x.get("status"), self.table.values()))
+        # if "in game" not in list_status_members:
+        #     print("Вызов конца игры!!!")
+
+        # TODO Меняется очередь если у текущего пользователя status не равен "in game"
+        # while self.table[current_domain]["status"] != "in game":
+        #     print(self.table.values())
+        #     self.queue += 1
+
+        if current_domain != self.domain:
+            return
+
+        full_name_queue = list_members_in_game[self.queue][1]["full_name"]
+        # self.give_cadr_member(domain_queue)
+        payload = self.updates[0].object.body.get("message").get("payload")
+        if payload is None:
+            return
+        payload = json.loads(payload).get("key")
+
+        # TODO Декомпозировать в функцию _start_game() (Придумай другое имя)
+        if payload == "Another card":
+            self.give_cadr_member(current_domain)
+            message_to_send = MessageToSend.cards_player.value.format(domain_queue=current_domain,
+                                                                      full_name_queue=full_name_queue,
+                                                                      cards='%0A'.join(
+                                                                          self.table[current_domain]['cards']))
+            await self.send_message(message_text=message_to_send)
+        elif payload == "Pass":
+            # TODO После пасса нужно чистить руку игрока который сделал пасс
+            #  или чистить все руки включая диллера если все сделали пасс
+            self.table[current_domain]["status"] = "pass"
+            self.members[current_domain]["status"] = "pass"
+
+            message_to_send = MessageToSend.player_pass.value.format(domain_queue=current_domain,
+                                                                     full_name_queue=full_name_queue)
+            await self.send_message(message_text=message_to_send)
+
+            message_to_send = MessageToSend.cards_player.value.format(domain_queue=current_domain,
+                                                                      full_name_queue=full_name_queue,
+                                                                      cards='%0A'.join(
+                                                                          self.table[current_domain]['cards'])
+                                                                      )
+
+            await self.send_message(message_text=message_to_send)
+
+        await self.over21(current_domain, full_name_queue)
+
+        await self.card_opening_result(current_domain, full_name_queue, list_members_in_game)
+
+    async def over21(self, current_domain, full_name_queue):
+        if self.table[current_domain]["sum_cards"] > 21:
+            self.table[current_domain]["status"] = "lost"
+            message_to_send = MessageToSend.member_loss.value.format(domain_queue=current_domain,
+                                                                     full_name_queue=full_name_queue)
+            await self.send_message(message_text=message_to_send)
+
+            self.clear_all_hands()
             self.give_cards()
-            await self.send_message()
 
-            self.message_to_send = f"Новые карты диллера: %0A{'%0A'.join(self.table['Diller']['cards'])}"
-            await self.send_message()
-            self.message_to_send = f"Новые карты игрока [{domain_queue}|{full_name_queue}]: " \
-                                   f"%0A{'%0A'.join(self.table[domain_queue]['cards'])}"
-            await self.send_message()
+            message_to_send = MessageToSend.new_cards_member.value.format(domain_queue=current_domain,
+                                                                          full_name_queue=full_name_queue,
+                                                                          cards='%0A'.join(
+                                                                              self.table[current_domain]['cards']))
+            await self.send_message(message_text=message_to_send)
 
-            self.queue += 1
+            await self.send_message(message_text=message_to_send)
+            message_to_send = MessageToSend.new_cards_diller.value.format(cards='%0A'.join(
+                                                                              self.table["Diller"]['cards']))
+            await self.send_message(message_text=message_to_send)
+
+    async def card_opening_result(self, current_domain, full_name_queue, list_members_in_game):
+
+        message_to_send = MessageToSend.cards_diller.value.format(
+             cards='%0A'.join(self.table["Diller"]['cards']))
+        list_members_pass = list(filter(lambda x: x[1].get("status") == "pass", self.members.items()))
+        list_members_in_game = list(filter(lambda x: x[1].get("status") == "in_game", self.members.items()))
+        if not list_members_in_game:
+            await self.send_message(message_to_send)
+            for i_domain in list_members_pass:
+                full_name = self.table[i_domain[0]]["full_name"]
+                cards = self.table[i_domain[0]]["cards"]
+                message_to_send = MessageToSend.cards_player.value.format(domain_queue=i_domain[0],
+                                                                          full_name_queue=full_name,
+                                                                          cards=cards)
+                await self.send_message(message_text=message_to_send)
+
+            for i_domain in list_members_pass:
+                # max_sum_cards_member = max(list(map(lambda x: x[1]["diller"]["sum_cards"], self.table["Diller"])))
+                max_sum_cards_member = []
+                for k, v in self.table.items():
+                    if k != "Diller":
+                        max_sum_cards_member.append(v["sum_cards"])
+                max_sum_cards_member = max(max_sum_cards_member)
+                sum_cards_member = self.table[i_domain[0]]["sum_cards"]
+                sum_cards_diller = self.table["Diller"]["sum_cards"]
+                if max_sum_cards_member > sum_cards_diller:
+                    message_to_send = MessageToSend.win.value
+                elif max_sum_cards_member == sum_cards_diller:
+                    message_to_send = MessageToSend.tie.value
+                else:
+                    message_to_send = MessageToSend.loss.value
+
+            await self.send_message(message_text=message_to_send)
+            self.clear_all_hands()
+            self.give_cards()
+            await self.send_message(message_text=message_to_send)
+            message_to_send = MessageToSend.new_cards_member.value.format(domain_queue=current_domain,
+                                                                          full_name_queue=full_name_queue,
+                                                                          cards='%0A'.join(
+                                                                              self.table[current_domain]['cards']))
+            await self.send_message(message_text=message_to_send)
+            message_to_send = MessageToSend.new_cards_diller.value.format(cards='%0A'.join(
+                                                                              self.table["Diller"]['cards']))
+            await self.send_message(message_text=message_to_send)
+            # self.queue = 0
+            # return
+
+        # TODO наверное нужно сделать функцию next_queue, которая будет добавлять или кольцевать очередь
+        self.next_queue()
+
+        message_to_send = MessageToSend.member_makes_move.value.format(domain_queue=current_domain,
+                                                                       full_name_queue=full_name_queue)
+        await self.send_message(message_text=message_to_send)
+
+    def next_queue(self):
+        self.queue += 1
+        if self.queue >= self.number_members_in_game:
+            self.queue = 0
 
     async def handle_updates(self, updates: list[Update]):
         if isinstance(updates, NoneType) or not updates:
@@ -251,31 +323,6 @@ class BotManager:
                 )
             )
 
-    async def _additions_member(self):
-        payload = self.updates[0].object.body.get("message").get("payload")
-        if not payload:
-            return
-        payload_key = json.loads(payload)["key"]
-        if payload_key == "I play":
-            if self.domain in self.members:
-                message_to_send = MessageToSend.member_already_exists.value
-            else:
-                self.members[self.domain] = f"{self.last_name} {self.first_name}"
-                self.message_to_send = f"[{self.domain}|{self.last_name} {self.first_name}] участвует"
-                message_to_send = MessageToSend.new_member.value.format(domain=self.domain,
-                                                                        last_name=self.last_name,
-                                                                        first_name=self.first_name)
-            await self.send_message(message_text=message_to_send)
-        elif payload_key == "Finish recruiting players" and self.domain == self.host:
-            string_members = ""
-            for member_k, member_v in self.members.items():
-                string_members += f"[{member_k}|{member_v}]%0A"
-            # self.message_to_send = f"Набор игроков окончен%0AУчастники: %0A{string_members}"
-            message_to_send = MessageToSend.list_members.value.format(members=string_members)
-            await self.send_message(message_text=message_to_send)
-            self.state = 2
-            await self.state_machine()
-
     async def close_game(self):
         self.state = 0
         self.members = dict()
@@ -300,7 +347,9 @@ class BotManager:
     def generate_table(self):
         self.table["Diller"] = {"cards": [], "sum_cards": 0}
         for member_k, member_v in self.members.items():
-            self.table[member_k] = {"full_name": member_v, "cards": [], "sum_cards": 0, "status": "in game"}
+            self.table[member_k] = {"full_name": member_v['full_name'], "cards": [], "sum_cards": 0, "status": "in_game"}
+            if member_k != "Diller":
+                self.members[member_k]["status"] = "in_game"
 
     def clear_all_hands(self):
         self.generate_table()
@@ -308,6 +357,9 @@ class BotManager:
     def clear_hand_member(self, member):
         self.table[member]["cards"] = []
         self.table[member]["sum_cards"] = 0
+        if member != "Diller":
+            self.table[member]["status"] = "in_game"
+            self.members[member]["status"] = "in_game"
 
     def give_cards(self):
         for member_k, member_v in self.table.items():
