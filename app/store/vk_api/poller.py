@@ -13,7 +13,9 @@ class Poller:
 
     def _done_callback(self, future: Future):
         if future.exception():
-            self.store.vk_api.logger.exception('polling failed', exc_info=future.exception())
+            self.store.vk_api.logger.exception(
+                "polling failed", exc_info=future.exception()
+            )
 
     async def start(self):
         self.poll_task = asyncio.create_task(self.poll())

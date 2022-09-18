@@ -21,7 +21,6 @@ class ThemeAddView(AuthRequiredMixin, View):
         return json_response(data=ThemeSchema().dump(theme))
 
 
-
 class ThemeListView(AuthRequiredMixin, View):
     @response_schema(ThemeListSchema)
     async def get(self):
@@ -30,14 +29,15 @@ class ThemeListView(AuthRequiredMixin, View):
         model_themes = [ThemeSchema().dump(theme) for theme in themes]
         return json_response(data={"themes": model_themes})
 
+
 class QuestionAddView(AuthRequiredMixin, View):
     @request_schema(QuestionSchema)
     @response_schema(QuestionSchema)
     async def post(self):
         request = await self.request.json()
-        title = request['title']
-        theme_id = request['theme_id']
-        answers = request['answers']
+        title = request["title"]
+        theme_id = request["theme_id"]
+        answers = request["answers"]
         if not await self.store.quizzes.get_theme_by_id(theme_id):
             raise HTTPNotFound
         result = await self.store.quizzes.create_question(title, theme_id, answers)

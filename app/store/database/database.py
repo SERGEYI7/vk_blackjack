@@ -11,7 +11,6 @@ if TYPE_CHECKING:
 
 
 class Database:
-
     def __init__(self, app: "Application"):
         self.app = app
         self._engine: Optional[AsyncEngine] = None
@@ -20,8 +19,12 @@ class Database:
 
     async def connect(self, *_: list, **__: dict) -> None:
         self._db = db
-        self._engine = create_async_engine("postgresql+asyncpg://kts_user:kts_pass@localhost/kts")#, poolclass=NullPool)
-        self.session = sessionmaker(self._engine, expire_on_commit=False, class_=AsyncSession)
+        self._engine = create_async_engine(
+            "postgresql+asyncpg://kts_user:kts_pass@localhost/kts"
+        )  # , poolclass=NullPool)
+        self.session = sessionmaker(
+            self._engine, expire_on_commit=False, class_=AsyncSession
+        )
         # self.session = sessionmaker(self._engine, class_=AsyncSession)
 
     async def disconnect(self, *_: list, **__: dict) -> None:
@@ -29,4 +32,3 @@ class Database:
             await self.session().close()
         if self._engine:
             await self._engine.dispose()
-

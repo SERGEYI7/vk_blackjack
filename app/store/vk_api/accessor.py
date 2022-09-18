@@ -27,7 +27,11 @@ class VkApiAccessor(BaseAccessor):
         self.ts: Optional[int] = None
 
     async def connect(self, app: "Application"):
-        self.session = ClientSession(connector=TCPConnector(verify_ssl=False, ))
+        self.session = ClientSession(
+            connector=TCPConnector(
+                verify_ssl=False,
+            )
+        )
         try:
             await self._get_long_poll_service()
         except Exception as e:
@@ -52,14 +56,14 @@ class VkApiAccessor(BaseAccessor):
 
     async def _get_long_poll_service(self):
         async with self.session.get(
-                self._build_query(
-                    host=API_PATH,
-                    method="groups.getLongPollServer",
-                    params={
-                        "group_id": self.app.config.bot.group_id,
-                        "access_token": self.app.config.bot.token,
-                    },
-                )
+            self._build_query(
+                host=API_PATH,
+                method="groups.getLongPollServer",
+                params={
+                    "group_id": self.app.config.bot.group_id,
+                    "access_token": self.app.config.bot.token,
+                },
+            )
         ) as resp:
             data = (await resp.json())["response"]
             if data.get("failed") == 2:
@@ -74,16 +78,16 @@ class VkApiAccessor(BaseAccessor):
 
     async def poll(self):
         async with self.session.get(
-                self._build_query(
-                    host=self.server,
-                    method="",
-                    params={
-                        "act": "a_check",
-                        "key": self.key,
-                        "ts": self.ts,
-                        "wait": 1, #30
-                    },
-                )
+            self._build_query(
+                host=self.server,
+                method="",
+                params={
+                    "act": "a_check",
+                    "key": self.key,
+                    "ts": self.ts,
+                    "wait": 1,  # 30
+                },
+            )
         ) as resp:
             data = await resp.json()
             if data.get("failed") == 2:
@@ -109,19 +113,19 @@ class VkApiAccessor(BaseAccessor):
 
     async def send_message(self, message: Message) -> None:
         async with self.session.get(
-                self._build_query(
-                    API_PATH,
-                    "messages.send",
-                    params={
-                        # "user_id": message.user_id,
-                        "random_id": random.randint(1, 2 ** 32),
-                        "peer_id": message.peer_id,#"-" + str(self.app.config.bot.group_id),
-                        "chat_id": message.chat_id,
-                        "message": message.text,
-                        "keyboard": message.kwargs["buttons"],
-                        "access_token": self.app.config.bot.token,
-                    },
-                )
+            self._build_query(
+                API_PATH,
+                "messages.send",
+                params={
+                    # "user_id": message.user_id,
+                    "random_id": random.randint(1, 2**32),
+                    "peer_id": message.peer_id,  # "-" + str(self.app.config.bot.group_id),
+                    "chat_id": message.chat_id,
+                    "message": message.text,
+                    "keyboard": message.kwargs["buttons"],
+                    "access_token": self.app.config.bot.token,
+                },
+            )
         ) as resp:
             data = await resp.json()
             self.logger.info(data)
@@ -135,11 +139,10 @@ class VkApiAccessor(BaseAccessor):
                     "event_id": message.kwargs["event_id"],
                     "user_id": message.user_id,
                     "peer_id": message.peer_id,
-                    "event_data": json.dumps({
-                        "type": "show_snackbar",
-                        "text": message.text
-                        }),
-                    "access_token": self.app.config.bot.token
+                    "event_data": json.dumps(
+                        {"type": "show_snackbar", "text": message.text}
+                    ),
+                    "access_token": self.app.config.bot.token,
                 },
             )
         ) as event_answer:
@@ -150,9 +153,11 @@ class VkApiAccessor(BaseAccessor):
             self._build_query(
                 API_PATH,
                 "users.get",
-                params={"user_ids": user_id,
-                        "fields": "domain",
-                        "access_token": self.app.config.bot.token}
+                params={
+                    "user_ids": user_id,
+                    "fields": "domain",
+                    "access_token": self.app.config.bot.token,
+                },
             )
         ) as resp:
             response = await resp.json()

@@ -8,6 +8,6 @@ class AuthRequiredMixin:
         if not getattr(self.request, "admin", None) and not self.request.cookies:
             raise HTTPUnauthorized
         cookie = self.request.cookies.get("session_id")
-        email, password = b64decode(cookie).decode().split(':')
+        email, password = b64decode(cookie).decode().split(":")
 
         return await super(AuthRequiredMixin, self)._iter()
