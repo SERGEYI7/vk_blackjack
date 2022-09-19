@@ -20,7 +20,9 @@ class AdminLoginView(View):
             raise HTTPForbidden
 
         response = json_response(data={"id": admin.id, "email": admin.email})
-        session_id = base64.b64encode(f"{admin.email}:{admin.password}".encode("utf-8")).decode()
+        session_id = base64.b64encode(
+            f"{admin.email}:{admin.password}".encode("utf-8")
+        ).decode()
         response.set_cookie("session_id", session_id)
 
         return response

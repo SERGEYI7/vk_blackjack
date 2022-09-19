@@ -21,7 +21,9 @@ class BaseAccessor:
         async with self.app.database.session.begin() as session:
             result = await session.execute(select(AdminModel))
             if not result.fetchall():
-                await self.app.store.admins.create_admin(self.app.config.admin.email, self.app.config.admin.password)
+                await self.app.store.admins.create_admin(
+                    self.app.config.admin.email, self.app.config.admin.password
+                )
 
     async def disconnect(self, app: "Application"):
         async with self.app.database.session.begin() as session:

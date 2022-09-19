@@ -1,8 +1,10 @@
+import json
 import random
 import typing
+from types import NoneType, coroutine
 from typing import Optional
 
-from aiohttp import TCPConnector
+from aiohttp import TCPConnector, ClientResponse
 from aiohttp.client import ClientSession
 
 from app.base.base_accessor import BaseAccessor
@@ -25,7 +27,11 @@ class VkApiAccessor(BaseAccessor):
         self.ts: Optional[int] = None
 
     async def connect(self, app: "Application"):
-        self.session = ClientSession(connector=TCPConnector(verify_ssl=False, ))
+        self.session = ClientSession(
+            connector=TCPConnector(
+                verify_ssl=False,
+            )
+        )
         try:
             await self._get_long_poll_service()
         except Exception as e:
@@ -60,6 +66,10 @@ class VkApiAccessor(BaseAccessor):
             )
         ) as resp:
             data = (await resp.json())["response"]
+            if data.get("failed") == 2:
+                print("Сработала ошибка в ацессоре в _get_long_poll_service")
+                # await self._get_long_poll_service()
+                # await self.poll()
             self.logger.info(data)
             self.key = data["key"]
             self.server = data["server"]
@@ -75,11 +85,15 @@ class VkApiAccessor(BaseAccessor):
                     "act": "a_check",
                     "key": self.key,
                     "ts": self.ts,
-                    "wait": 30,
+                    "wait": 1,  # 30
                 },
             )
         ) as resp:
             data = await resp.json()
+            if data.get("failed") == 2:
+                print("Сработала ошибка в ацессоре в полл")
+                await self._get_long_poll_service()
+                await self.poll()
             self.logger.info(data)
             self.ts = data["ts"]
             raw_updates = data.get("updates", [])
@@ -89,9 +103,9 @@ class VkApiAccessor(BaseAccessor):
                     Update(
                         type=update["type"],
                         object=UpdateObject(
-                            id=update["object"]["id"],
-                            user_id=update["object"]["user_id"],
-                            body=update["object"]["body"],
+                            id=update["object"]["message"]["id"],
+                            user_id=update["object"]["message"]["from_id"],
+                            body=update["object"],
                         ),
                     )
                 )
@@ -103,14 +117,48 @@ class VkApiAccessor(BaseAccessor):
                 API_PATH,
                 "messages.send",
                 params={
-                    "user_id": message.user_id,
+                    # "user_id": message.user_id,
                     "random_id": random.randint(1, 2**32),
-                    "peer_id": "-" + str(self.app.config.bot.group_id),
+                    "peer_id": message.peer_id,  # "-" + str(self.app.config.bot.group_id),
+                    "chat_id": message.chat_id,
                     "message": message.text,
+                    "keyboard": message.kwargs["buttons"],
                     "access_token": self.app.config.bot.token,
                 },
             )
         ) as resp:
-            print(resp.json())
             data = await resp.json()
             self.logger.info(data)
+
+    async def send_message_event_answer(self, message):
+        async with self.session.get(
+            self._build_query(
+                API_PATH,
+                "messages.sendMessageEventAnswer",
+                params={
+                    "event_id": message.kwargs["event_id"],
+                    "user_id": message.user_id,
+                    "peer_id": message.peer_id,
+                    "event_data": json.dumps(
+                        {"type": "show_snackbar", "text": message.text}
+                    ),
+                    "access_token": self.app.config.bot.token,
+                },
+            )
+        ) as event_answer:
+            print(await event_answer.json())
+
+    async def user(self, user_id):
+        async with self.session.get(
+            self._build_query(
+                API_PATH,
+                "users.get",
+                params={
+                    "user_ids": user_id,
+                    "fields": "domain",
+                    "access_token": self.app.config.bot.token,
+                },
+            )
+        ) as resp:
+            response = await resp.json()
+            return response

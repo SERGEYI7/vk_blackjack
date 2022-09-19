@@ -3,7 +3,14 @@ from json import dumps
 
 from sqlalchemy.orm import relationship, backref
 
-from app.store.database.sqlalchemy_base import db, Column, BigInteger, String, Boolean, ForeignKey
+from app.store.database.sqlalchemy_base import (
+    db,
+    Column,
+    BigInteger,
+    String,
+    Boolean,
+    ForeignKey,
+)
 
 
 @dataclass
@@ -30,25 +37,39 @@ class ThemeModel(db):
     __tablename__ = "themes"
     id = Column(BigInteger, primary_key=True)
     title = Column(String, unique=True)
-    questions = relationship("QuestionModel", cascade="all, delete", back_populates="theme", passive_deletes=True)
+    questions = relationship(
+        "QuestionModel",
+        cascade="all, delete",
+        back_populates="theme",
+        passive_deletes=True,
+    )
 
     def __repr__(self):
-        r = {'Theme': {'id': self.id, 'title': self.title}}
+        r = {"Theme": {"id": self.id, "title": self.title}}
         return dumps(r)
-
 
 
 class QuestionModel(db):
     __tablename__ = "questions"
     id = Column(BigInteger, primary_key=True)
     title = Column(String, unique=True)
-    theme_id = Column(BigInteger, ForeignKey('themes.id', ondelete='CASCADE'), nullable=False)
+    theme_id = Column(
+        BigInteger, ForeignKey("themes.id", ondelete="CASCADE"), nullable=False
+    )
     theme = relationship(ThemeModel, back_populates="questions")
-    answers = relationship('AnswerModel', cascade="all, delete", back_populates="question", passive_deletes=True)
+    answers = relationship(
+        "AnswerModel",
+        cascade="all, delete",
+        back_populates="question",
+        passive_deletes=True,
+    )
 
     def __repr__(self):
-        r = {'Question': {'id': self.id, 'title': self.title, 'theme_id': self.theme_id}}
+        r = {
+            "Question": {"id": self.id, "title": self.title, "theme_id": self.theme_id}
+        }
         return dumps(r)
+
 
 class AnswerModel(db):
     __tablename__ = "answers"
@@ -59,5 +80,5 @@ class AnswerModel(db):
     is_correct = Column(Boolean)
 
     def __repr__(self):
-        r = {'Answer': {'title': self.title, 'is_correct': self.title}}
+        r = {"Answer": {"title": self.title, "is_correct": self.title}}
         return dumps(r)

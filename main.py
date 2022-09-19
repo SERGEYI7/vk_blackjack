@@ -10,5 +10,6 @@ if __name__ == "__main__":
                 os.path.dirname(os.path.realpath(__file__)), "config.yml"
             )
         ),
-        host='127.0.0.1', port=8080
+        host="127.0.0.1",
+        port=8080,
     )
