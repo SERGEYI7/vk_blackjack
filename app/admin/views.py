@@ -1,10 +1,13 @@
 import base64
+import json
 
 from aiohttp.web import HTTPForbidden, HTTPUnauthorized
 from aiohttp_apispec import request_schema, response_schema
 from aiohttp_session import new_session
+from sqlalchemy import select
 
 from app.admin.schemes import AdminSchema
+from app.quiz.models import StatisticsModel, Statistics
 from app.web.app import View
 from app.web.utils import json_response
 
@@ -32,3 +35,13 @@ class AdminCurrentView(View):
     @response_schema(AdminSchema, 200)
     async def get(self):
         raise NotImplementedError
+
+
+class AdminStatisticView(View):
+    async def get(self):
+        async with self.database.session.begin() as session:
+            raw_statistics = await session.execute(select(StatisticsModel))
+        statistics = [
+            json.loads(str(stat[0]))["Statistics"] for stat in raw_statistics.fetchall()
+        ]
+        return json_response(data={"data": statistics})
