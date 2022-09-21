@@ -13,8 +13,8 @@ from app.web.utils import json_response
 
 
 class AdminLoginView(View):
-    @request_schema(AdminSchema)
-    @response_schema(AdminSchema, 200)
+    # @request_schema(AdminSchema)
+    # @response_schema(AdminSchema, 200)
     async def post(self):
         email = self.data.get("email")
         password = self.data.get("password")
@@ -32,12 +32,13 @@ class AdminLoginView(View):
 
 
 class AdminCurrentView(View):
-    @response_schema(AdminSchema, 200)
+    # @response_schema(AdminSchema, 200)
     async def get(self):
         raise NotImplementedError
 
 
 class AdminStatisticView(View):
+    @request_schema(AdminSchema)
     async def get(self):
         async with self.database.session.begin() as session:
             raw_statistics = await session.execute(select(StatisticsModel))

@@ -11,13 +11,11 @@ from app.store.vk_api.dataclasses import Message, Update
 from app.quiz.models import (
     Users,
     UsersModel,
-    Statistics,
     StatisticsModel,
     GameUser,
     GameUserModel,
     CurrentGame,
     CurrentGameModel,
-    Chat,
     ChatModel,
 )
 
@@ -191,7 +189,6 @@ class BotManager:
 
     async def _start_additions_member(self):
         if self.received_message == "/start":
-            self.host = self.domain
             message_to_send = MessageToSend.start_additions_member.format(
                 first_name=self.first_name, last_name=self.last_name
             )
@@ -202,14 +199,20 @@ class BotManager:
                 await session.execute(
                     update(CurrentGameModel)
                     .where(CurrentGameModel.id == self.current_game_id)
-                    .values(state=1)
+                    .values(state=1, host=self.domain)
                 )
 
     async def _additions_member(self):
         payload = self.updates[0].object.body.get("message").get("payload")
         if not payload:
             return
-        # self.get_full_name_vk_id_statistic_id(last_name, first_name, domain)
+
+        async with self.app.database.session.begin() as session:
+            raw_current_game = await session.execute(select(CurrentGameModel))
+            fetch = raw_current_game.fetchall()
+        current_game = CurrentGame(
+            **json.loads(str(fetch[0][-1]))["CurrentGame"]
+        )
         payload_key = json.loads(payload)["key"]
         if payload_key == "I play":
             async with self.app.database.session.begin() as session:
@@ -222,9 +225,6 @@ class BotManager:
                 raw_game_user = await session.execute(
                     select(GameUserModel).where(GameUserModel.user_id == users.id)
                 )
-
-                # game_user = GameUser(json.loads(str(raw_game_user.fetchone()[0])))
-            # if self.domain in self.members:
             if raw_game_user.fetchall():
                 message_to_send = MessageToSend.member_already_exists
             else:
@@ -242,10 +242,6 @@ class BotManager:
                         current_game_id=self.current_game_id,
                     )
                     session.add(game_user)
-                # self.members[self.domain] = {
-                #     "full_name": f"{self.last_name} {self.first_name}",
-                #     "status": "in_game",
-                # }
                 self.message_to_send = (
                     f"[{self.domain}|{self.last_name} {self.first_name}] участвует"
                 )
@@ -255,7 +251,7 @@ class BotManager:
                     first_name=self.first_name,
                 )
             await self.send_message(message_text=message_to_send)
-        elif payload_key == "Finish recruiting players" and self.domain == self.host:
+        elif payload_key == "Finish recruiting players" and self.domain == current_game.host:
             string_members = ""
             async with self.app.database.session.begin() as session:
                 raw_game_users = await session.execute(select(GameUserModel))
@@ -266,9 +262,10 @@ class BotManager:
                     raw_user = await session.execute(
                         select(UsersModel).where(UsersModel.id == game_user.user_id)
                     )
-                    user = Users(**json.loads(str(raw_user.fetchone()[0]))["Users"])
-                    # for member_k, member_v in self.members.items():
-                    string_members += f"[{user.vk_id}|{user.full_name}]%0A"
+                    fetch_raw_user = raw_user.fetchone()
+                    if fetch_raw_user:
+                        user = Users(**json.loads(str(fetch_raw_user[0]))["Users"])
+                        string_members += f"[{user.vk_id}|{user.full_name}]%0A"
             message_to_send = MessageToSend.list_members.format(members=string_members)
             await self.send_message(message_text=message_to_send)
             async with self.app.database.session.begin() as session:
@@ -283,12 +280,20 @@ class BotManager:
     async def _start_distribution_card(self):
         await self.generate_table()
         await self.give_cards()
+
         async with self.app.database.session.begin() as session:
-            raw_users = await session.execute(select(UsersModel))
-        users = [
-            Users(**json.loads(str(user[0]))["Users"]) for user in raw_users.fetchall()
+            raw_game_users = await session.execute(select(GameUserModel))
+        game_users = [
+            GameUser(**json.loads(str(user[0]))["GameUser"])
+            for user in raw_game_users.fetchall()
         ]
-        for user in users:
+
+        for game_user in game_users:
+
+            async with self.app.database.session.begin() as session:
+                raw_users = await session.execute(select(UsersModel).where(UsersModel.id == game_user.user_id))
+            user = Users(**json.loads(str(raw_users.fetchone()[0]))["Users"])
+
             member_k = user.vk_id
             full_name = user.full_name
             name = f"[{member_k}|{full_name}]"
@@ -345,8 +350,6 @@ class BotManager:
             )
             await self.send_message(message_text=message_to_send)
         elif payload == "Pass":
-            # self.table[self.queue_domain]["status"] = "pass"
-            # self.members[self.queue_domain]["status"] = "pass"
 
             async with self.app.database.session.begin() as session:
                 await session.execute(
@@ -614,7 +617,7 @@ class BotManager:
                 session.add(chat_model)
             async with self.app.database.session.begin() as session:
                 raw_current_game = CurrentGameModel(
-                    chat_id=chat_model.id, host=self.domain
+                    chat_id=chat_model.id
                 )
                 session.add(raw_current_game)
             current_game = CurrentGame(
@@ -652,7 +655,6 @@ class BotManager:
             users = Users(**json.loads(str(result_users[0]))["Users"])
 
     async def generate_table(self):
-        # self.table["Diller"] = {"cards": [], "sum_cards": 0}
         async with self.app.database.session.begin() as session:
             raw_users = await session.execute(
                 select(UsersModel).where(UsersModel.vk_id == "Diller")
@@ -670,7 +672,6 @@ class BotManager:
             session.add(game_user)
 
     async def clear_all_hands(self):
-        await self.generate_table()
         async with self.app.database.session.begin() as session:
             raw_users = await session.execute(select(UsersModel))
         users = [
@@ -687,8 +688,6 @@ class BotManager:
                 .where(GameUserModel.user_id == user.id)
                 .values(cards="")
             )
-        # self.table[domain]["cards"] = []
-        # self.table[domain]["sum_cards"] = 0
         if domain != "Diller":
             async with self.app.database.session.begin() as session:
                 await session.execute(
@@ -696,8 +695,6 @@ class BotManager:
                     .where(GameUserModel.user_id == user.id)
                     .values(cards="", status="in_game")
                 )
-            # self.table[domain]["status"] = "in_game"
-            # self.members[domain]["status"] = "in_game"
         else:
             async with self.app.database.session.begin() as session:
                 await session.execute(
@@ -707,17 +704,18 @@ class BotManager:
                 )
 
     async def give_cards(self):
-        # async with self.app.database.session.begin() as session:
-        #     raw_game_users = await session.execute(select(GameUserModel))
+
         async with self.app.database.session.begin() as session:
-            raw_users = await session.execute(select(UsersModel))
-        # for i in raw_game_users.fetchall():
-        #     print(i)
-        # print([GameUser(**json.loads(str(user[0]))["GameUser"]) for user in raw_game_users.fetchall()])
-        users = [
-            Users(**json.loads(str(user[0]))["Users"]) for user in raw_users.fetchall()
-        ]
-        for user in users:
+            raw_game_users = await session.execute(select(GameUserModel))
+            game_users = [
+                GameUser(**json.loads(str(user[0]))["GameUser"]) for user in raw_game_users.fetchall()
+            ]
+
+        for game_user in game_users:
+            async with self.app.database.session.begin() as session:
+                raw_user = await session.execute(select(UsersModel).where(UsersModel.id == game_user.user_id))
+            user = Users(**json.loads(str(raw_user.fetchone()[0]))["Users"])
+
             member_k = user.vk_id
             if member_k == "Diller":
                 await self.give_cadr_member(member_k, 2, 17)
@@ -737,10 +735,12 @@ class BotManager:
             raw_game_user = await session.execute(
                 select(GameUserModel).where(GameUserModel.user_id == user.id)
             )
-        game_user = GameUser(**json.loads(str(raw_game_user.fetchone()[0]))["GameUser"])
+        fetch_game_user = raw_game_user.fetchone()
+        if not fetch_game_user:
+            return
+        game_user = GameUser(**json.loads(str(fetch_game_user[0]))["GameUser"])
         mixed_deck = list(self.card_deck)
         limit = 100 if limit is None else limit
-        # hand = self.table[domain]
         if game_user.cards == "":
             hand = []
         else:
@@ -767,7 +767,6 @@ class BotManager:
                                 .where(GameUserModel.user_id == user.id)
                                 .values(cards=", ".join(hand))
                             )
-                        # self.card_deck.pop(random_card)
                         ready = True
             except Exception as e:
                 print(e)
@@ -817,6 +816,9 @@ class BotManager:
             raw_game_user = await session.execute(
                 select(GameUserModel).where(GameUserModel.user_id == user.id)
             )
-        game_user = GameUser(**json.loads(str(raw_game_user.fetchone()[0]))["GameUser"])
+        fetch_game_user = raw_game_user.fetchone()
+        if not fetch_game_user:
+            return
+        game_user = GameUser(**json.loads(str(fetch_game_user[0]))["GameUser"])
         cards = game_user.cards.split(", ")
         return "%0A".join(cards)
