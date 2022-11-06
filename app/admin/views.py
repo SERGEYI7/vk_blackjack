@@ -38,7 +38,6 @@ class AdminCurrentView(View):
 
 
 class AdminStatisticView(View):
-    @request_schema(AdminSchema)
     async def get(self):
         async with self.database.session.begin() as session:
             raw_statistics = await session.execute(select(StatisticsModel))
